@@ -2,7 +2,7 @@
 'use strict';
 /**
 * Интерфейс MOD + Главные карточки (Исправленная версия)
-* Версия: 3.0.1-fixed
+* Версия: 3.0.2-fixed
 */
 
 /* ==========================
@@ -10,7 +10,7 @@
 * ========================== */
 var InterFaceMod = {
     name: 'interface_mod',
-    version: '3.0.1-fixed',
+    version: '3.0.2-fixed',
     debug: false,
     settings: {
         enabled: true,
@@ -29,7 +29,9 @@ var InterFaceMod = {
         main_badges_show_tv_progress: true,
         main_badges_show_next_episode: true,
         main_badges_show_rating: true,
-        main_badges_show_type: true
+        main_badges_show_type: true,
+        jacred_enabled: true,
+        jacred_url: 'jacred.xyz'
     }
 };
 
@@ -51,7 +53,9 @@ var SKEY = {
     main_badges_show_tv_progress: 'main_badges_show_tv_progress',
     main_badges_show_next_episode: 'main_badges_show_next_episode',
     main_badges_show_rating: 'main_badges_show_rating',
-    main_badges_show_type: 'main_badges_show_type'
+    main_badges_show_type: 'main_badges_show_type',
+    jacred_enabled: 'jacred_enabled',
+    jacred_url: 'jacred_xyz_url'
 };
 
 /* ==========================
@@ -68,33 +72,48 @@ var Q_CACHE_MAX_ITEMS = 500;
 function pruneCache(cacheObj, maxItems) {
     var keys = Object.keys(cacheObj);
     if (keys.length > maxItems) {
-        keys.sort(function(a, b) { 
-            return (cacheObj[a].ts || cacheObj[a].timestamp || 0) - (cacheObj[b].ts || cacheObj[b].timestamp || 0); 
+        keys.sort(function(a, b) {
+            return (cacheObj[a].ts || cacheObj[a].timestamp || 0) - (cacheObj[b].ts || cacheObj[b].timestamp || 0);
         });
         while (keys.length > maxItems) delete cacheObj[keys.shift()];
     }
 }
 
-function getTvCache() { return Lampa.Storage.get(TV_CACHE_KEY) || {}; }
-function setTvCache(cache) { pruneCache(cache, TV_CACHE_MAX_ITEMS); Lampa.Storage.set(TV_CACHE_KEY, cache); }
-function getQualityCache() { return Lampa.Storage.get(QUALITY_CACHE_KEY) || {}; }
-function setQualityCache(cache) { pruneCache(cache, Q_CACHE_MAX_ITEMS); Lampa.Storage.set(QUALITY_CACHE_KEY, cache); }
+function getTvCache() {
+    try { return Lampa.Storage.get(TV_CACHE_KEY) || {}; }
+    catch(e) { return {}; }
+}
+
+function setTvCache(cache) {
+    try { pruneCache(cache, TV_CACHE_MAX_ITEMS); Lampa.Storage.set(TV_CACHE_KEY, cache); }
+    catch(e) {}
+}
 
 function getTvCached(id) {
     var c = getTvCache(), item = c[String(id)];
     if (!item) return null;
-    if (Date.now() - item.ts > TV_CACHE_TTL) { 
-        delete c[String(id)]; 
-        setTvCache(c); 
-        return null; 
+    if (Date.now() - item.ts > TV_CACHE_TTL) {
+        delete c[String(id)];
+        setTvCache(c);
+        return null;
     }
     return item.data || null;
 }
 
 function saveTvCached(id, data) {
-    var c = getTvCache(); 
-    c[String(id)] = { ts: Date.now(), data: data }; 
+    var c = getTvCache();
+    c[String(id)] = { ts: Date.now(), data: data };
     setTvCache(c);
+}
+
+function getQualityCache() {
+    try { return Lampa.Storage.get(QUALITY_CACHE_KEY) || {}; }
+    catch(e) { return {}; }
+}
+
+function setQualityCache(cache) {
+    try { pruneCache(cache, Q_CACHE_MAX_ITEMS); Lampa.Storage.set(QUALITY_CACHE_KEY, cache); }
+    catch(e) {}
 }
 
 function getQualityCacheItem(key) {
@@ -118,7 +137,7 @@ function fetchTvDetails(id, cb) {
     try {
         if (Lampa.TMDB && typeof Lampa.TMDB.get === 'function') {
             return Lampa.TMDB.get('tv/' + id, {}, function(r) {
-                if (r && r.id) { saveTvCached(id, r); cb(null, r); } 
+                if (r && r.id) { saveTvCached(id, r); cb(null, r); }
                 else cb(new Error('empty'));
             }, function() { cb(new Error('tmdb error')); });
         }
@@ -127,7 +146,7 @@ function fetchTvDetails(id, cb) {
     try {
         if (Lampa.Api && typeof Lampa.Api.tmdb === 'function') {
             return Lampa.Api.tmdb('tv/' + id, {}, function(r) {
-                if (r && r.id) { saveTvCached(id, r); cb(null, r); } 
+                if (r && r.id) { saveTvCached(id, r); cb(null, r); }
                 else cb(new Error('empty'));
             }, function() { cb(new Error('tmdb error')); });
         }
@@ -137,12 +156,11 @@ function fetchTvDetails(id, cb) {
 }
 
 /* ==========================
-* JACRED QUALITY - HTTPS
+* JACRED QUALITY - HTTPS + SAFE STORAGE
 * ========================== */
 var Q_LOGGING = false;
-var JACRED_PROTOCOL = 'https://'; // ИСПРАВЛЕНО: HTTPS
-var JACRED_URL_RAW = Lampa.Storage.get('jacred_xyz_url') || 'jacred.xyz';
-var JACRED_URL = JACRED_URL_RAW.replace(/^https?:\/\//, '');
+var JACRED_PROTOCOL = 'https://'; // ИСПРАВЛЕНО: HTTPS вместо HTTP
+var JACRED_URL = 'jacred.xyz'; // Дефолтное значение
 var PROXY_TIMEOUT = 7000;
 var PROXY_LIST = [
     'https://api.allorigins.win/raw?url=',
@@ -150,16 +168,28 @@ var PROXY_LIST = [
     'https://cors-proxy.htmldriven.com/?url='
 ];
 
+// Безопасное получение URL из Storage
+function initJacredUrl() {
+    try {
+        if (Lampa.Storage && typeof Lampa.Storage.get === 'function') {
+            var stored = Lampa.Storage.get(SKEY.jacred_url);
+            if (stored) JACRED_URL = stored.replace(/^https?:\/\//, '');
+        }
+    } catch(e) {
+        console.log('Interface MOD: Cannot access Storage for JacRed URL');
+    }
+}
+
 function fetchWithProxy(url, cardId, callback) {
     var idx = 0, done = false;
     function tryNext() {
-        if (idx >= PROXY_LIST.length) { 
-            if (!done) { done = true; callback(new Error('All proxies failed')); } 
-            return; 
+        if (idx >= PROXY_LIST.length) {
+            if (!done) { done = true; callback(new Error('All proxies failed')); }
+            return;
         }
         var proxyUrl = PROXY_LIST[idx] + encodeURIComponent(url);
-        var timeoutId = setTimeout(function() { 
-            if (!done) { idx++; tryNext(); } 
+        var timeoutId = setTimeout(function() {
+            if (!done) { idx++; tryNext(); }
         }, PROXY_TIMEOUT);
         
         fetch(proxyUrl).then(function(r) {
@@ -167,8 +197,8 @@ function fetchWithProxy(url, cardId, callback) {
             if (!r.ok) throw new Error('Proxy ' + r.status);
             return r.text();
         }).then(function(txt) {
-            if (done) return; 
-            done = true; 
+            if (done) return;
+            done = true;
             callback(null, txt);
         }).catch(function() {
             clearTimeout(timeoutId);
@@ -180,23 +210,27 @@ function fetchWithProxy(url, cardId, callback) {
 
 function translateQuality(q) {
     if (typeof q !== 'number') return q;
-    if (q >= 2160) return '4K'; 
-    if (q >= 1080) return '1080P'; 
-    if (q >= 720) return '720P'; 
+    if (q >= 2160) return '4K';
+    if (q >= 1080) return '1080P';
+    if (q >= 720) return '720P';
     if (q > 0) return 'SD';
     return null;
 }
 
 function getBestReleaseFromJacred(normalizedCard, cardId, callback) {
+    if (!InterFaceMod.settings.jacred_enabled) return callback(null);
     if (!JACRED_URL) return callback(null);
+    
     var dateStr = normalizedCard.release_date || '';
     var year = dateStr && dateStr.length >= 4 ? dateStr.substring(0, 4) : '';
     if (!year || isNaN(year)) return callback(null);
     
     function searchApi(searchTitle, searchYear, exactMatch, apiCallback) {
-        var userId = Lampa.Storage.get('lampac_unic_id', '');
+        var userId = '';
+        try { userId = Lampa.Storage.get('lampac_unic_id', ''); } catch(e) {}
+        
         var apiUrl = JACRED_PROTOCOL + JACRED_URL + '/api/v1.0/torrents?search=' +
-            encodeURIComponent(searchTitle) + '&year=' + searchYear + 
+            encodeURIComponent(searchTitle) + '&year=' + searchYear +
             (exactMatch ? '&exact=true' : '') + '&uid=' + userId;
         
         var timeoutId = setTimeout(function() { apiCallback(null); }, PROXY_TIMEOUT * PROXY_LIST.length + 2000);
@@ -245,34 +279,27 @@ function injectMainBadgesCSS() {
     
     var css = '<style id="interface_mod_main_badges_css">' +
         // СКРЫВАЕМ стандартные элементы Lampa
-        '.card__type{display:none!important;}' +  // Скрываем TV/Фильм от Lampa
-        '.card__vote{display:none!important;}' +  // Скрываем стандартный рейтинг
+        '.card__type{display:none!important;}' +
+        '.card__vote{display:none!important;}' +
         '.card__view{position:relative!important;}' +
-        
         // Наши бейджи
         '.im_badge{position:absolute!important;z-index:9999!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;' +
         'padding:0.25em 0.50em!important;border-radius:0.35em!important;font-weight:800!important;line-height:1!important;white-space:nowrap!important;' +
         'font-size:0.80em!important;backdrop-filter:blur(2px)!important;pointer-events:none!important;}' +
-        
         // TYPE (верх слева)
         '.im_type{top:0.55em!important;left:0.55em!important;background:rgba(156,39,176,0.95)!important;color:#fff!important;}' +
-        
         // RATING (верх справа)
         '.im_rating{top:0.55em!important;right:0.55em!important;background:rgba(255,152,0,0.95)!important;color:#111!important;}' +
         '.im_rating.r_red{background:rgba(244,67,54,0.95)!important;color:#fff!important;}' +
         '.im_rating.r_orange{background:rgba(255,152,0,0.95)!important;color:#111!important;}' +
         '.im_rating.r_blue{background:rgba(33,150,243,0.95)!important;color:#fff!important;}' +
         '.im_rating.r_green{background:rgba(76,175,80,0.95)!important;color:#fff!important;}' +
-        
         // TV прогресс (слева снизу выше всех)
         '.im_tv{left:0.55em!important;bottom:2.55em!important;background:rgba(255,193,7,0.95)!important;color:#111!important;}' +
-        
         // Next episode (слева снизу середина)
         '.im_next{left:0.55em!important;bottom:1.55em!important;background:rgba(33,150,243,0.95)!important;color:#fff!important;}' +
-        
         // Quality (слева снизу)
         '.im_quality{left:0.55em!important;bottom:0.55em!important;background:rgba(76,175,80,0.95)!important;color:#fff!important;}' +
-        
         // Year (справа снизу)
         '.im_year{right:0.55em!important;bottom:0.55em!important;background:rgba(255,152,0,0.95)!important;color:#111!important;}' +
         '</style>';
@@ -291,7 +318,10 @@ function ratingClass(v) {
     return 'r_green';
 }
 
-function safeNum(n) { var x = parseFloat(n); return isNaN(x) ? null : x; }
+function safeNum(n) {
+    var x = parseFloat(n);
+    return isNaN(x) ? null : x;
+}
 
 function getCardTypeFromData(d) {
     var t = d.media_type || d.type || d.card_type;
@@ -309,10 +339,10 @@ function getYearFromData(d) {
 
 function ensureBadge(view, cls, text) {
     var el = view.querySelector('.' + cls.replace(/\s+/g, '.'));
-    if (!el) { 
-        el = document.createElement('div'); 
-        el.className = 'im_badge ' + cls; 
-        view.appendChild(el); 
+    if (!el) {
+        el = document.createElement('div');
+        el.className = 'im_badge ' + cls;
+        view.appendChild(el);
     }
     el.textContent = text;
     return el;
@@ -345,9 +375,9 @@ function buildTvProgress(details) {
     var season = last && last.season_number ? last.season_number : null;
     var ep = last && last.episode_number ? last.episode_number : null;
     
-    if (next && next.season_number && next.episode_number) { 
-        season = next.season_number; 
-        ep = Math.max(0, next.episode_number - 1); 
+    if (next && next.season_number && next.episode_number) {
+        season = next.season_number;
+        ep = Math.max(0, next.episode_number - 1);
     }
     
     if (!season || ep === null) return null;
@@ -356,9 +386,9 @@ function buildTvProgress(details) {
     if (details.seasons && season !== null) {
         for (var i = 0; i < details.seasons.length; i++) {
             var s = details.seasons[i];
-            if (s && s.season_number === season) { 
-                total = s.episode_count || null; 
-                break; 
+            if (s && s.season_number === season) {
+                total = s.episode_count || null;
+                break;
             }
         }
     }
@@ -446,7 +476,7 @@ function renderMainBadges(cardEl) {
             }
         });
     } else {
-        removeBadge(view, 'im_tv'); 
+        removeBadge(view, 'im_tv');
         removeBadge(view, 'im_next');
         
         if (InterFaceMod.settings.main_badges_show_quality) {
@@ -459,19 +489,19 @@ function renderMainBadges(cardEl) {
 
 function renderQualityForCard(cardEl, view, data, type) {
     var normalized = {
-        id: data.id || '', 
+        id: data.id || '',
         title: data.title || data.name || '',
         original_title: data.original_title || data.original_name || '',
-        release_date: data.release_date || data.first_air_date || '', 
+        release_date: data.release_date || data.first_air_date || '',
         type: type
     };
     
     var cacheKey = type + '_' + normalized.id;
     var cached = getQualityCacheItem(cacheKey);
     
-    if (cached && cached.quality) { 
-        applyQualityBadge(view, cached.quality); 
-        return; 
+    if (cached && cached.quality) {
+        applyQualityBadge(view, cached.quality);
+        return;
     }
     
     getBestReleaseFromJacred(normalized, String(normalized.id), function(jr) {
@@ -528,15 +558,15 @@ function startMainBadgesObserver() {
     }
 }
 
-function stopObserver() { 
-    if (domObserver) { 
-        domObserver.disconnect(); 
-        domObserver = null; 
-    } 
+function stopObserver() {
+    if (domObserver) {
+        domObserver.disconnect();
+        domObserver = null;
+    }
 }
 
 /* ==========================
-* ОСТАЛЬНЫЕ ФУНКЦИИ
+* ОСТАЛЬНЫЕ ФУНКЦИИ (из вашего кода)
 * ========================== */
 function addSeasonInfo() { /* ваш код из версии 3.0.0 */ }
 function showAllButtons() { /* ваш код из версии 3.0.0 */ }
@@ -562,7 +592,7 @@ function registerSettings() {
     // JacRed настройки
     Lampa.SettingsApi.addParam({
         component: 'season_info',
-        param: { name: 'jacred_enabled', type: 'trigger', default: true },
+        param: { name: SKEY.jacred_enabled, type: 'trigger', default: true },
         field: { name: 'JacRed: Включить', description: 'Показывать качество из JacRed (4K/1080P/720P)' },
         onChange: function(v) {
             InterFaceMod.settings.jacred_enabled = v;
@@ -572,12 +602,13 @@ function registerSettings() {
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
-        param: { name: 'jacred_url', type: 'input', default: 'jacred.xyz' },
+        param: { name: SKEY.jacred_url, type: 'input', default: 'jacred.xyz' },
         field: { name: 'JacRed: URL', description: 'Адрес сервера JacRed' },
         onChange: function(v) {
             InterFaceMod.settings.jacred_url = v;
-            Lampa.Settings.update();
+            Lampa.Storage.set(SKEY.jacred_url, v);
             JACRED_URL = v.replace(/^https?:\/\//, '');
+            Lampa.Settings.update();
         }
     });
     
@@ -764,19 +795,25 @@ function registerSettings() {
 * LOAD SETTINGS
 * ========================== */
 function loadSettings() {
-    InterFaceMod.settings.show_buttons = Lampa.Storage.get(SKEY.show_buttons, true);
-    InterFaceMod.settings.show_movie_type = Lampa.Storage.get(SKEY.show_movie_type, true);
-    InterFaceMod.settings.theme = Lampa.Storage.get(SKEY.theme, 'default');
-    InterFaceMod.settings.colored_ratings = Lampa.Storage.get(SKEY.colored_ratings, true);
-    InterFaceMod.settings.colored_elements = Lampa.Storage.get(SKEY.colored_elements, true);
-    InterFaceMod.settings.seasons_info_mode = Lampa.Storage.get(SKEY.seasons_info_mode, 'aired');
-    InterFaceMod.settings.label_position = Lampa.Storage.get(SKEY.label_position, 'top-right');
-    InterFaceMod.settings.main_badges_enable = Lampa.Storage.get(SKEY.main_badges_enable, true);
-    InterFaceMod.settings.main_badges_show_quality = Lampa.Storage.get(SKEY.main_badges_show_quality, true);
-    InterFaceMod.settings.main_badges_show_year = Lampa.Storage.get(SKEY.main_badges_show_year, true);
-    InterFaceMod.settings.main_badges_show_tv_progress = Lampa.Storage.get(SKEY.main_badges_show_tv_progress, true);
-    InterFaceMod.settings.main_badges_show_next_episode = Lampa.Storage.get(SKEY.main_badges_show_next_episode, true);
-    InterFaceMod.settings.main_badges_show_rating = Lampa.Storage.get(SKEY.main_badges_show_rating, true);
+    try {
+        InterFaceMod.settings.jacred_enabled = Lampa.Storage.get(SKEY.jacred_enabled, true);
+        InterFaceMod.settings.jacred_url = Lampa.Storage.get(SKEY.jacred_url, 'jacred.xyz');
+        InterFaceMod.settings.show_buttons = Lampa.Storage.get(SKEY.show_buttons, true);
+        InterFaceMod.settings.show_movie_type = Lampa.Storage.get(SKEY.show_movie_type, true);
+        InterFaceMod.settings.theme = Lampa.Storage.get(SKEY.theme, 'default');
+        InterFaceMod.settings.colored_ratings = Lampa.Storage.get(SKEY.colored_ratings, true);
+        InterFaceMod.settings.colored_elements = Lampa.Storage.get(SKEY.colored_elements, true);
+        InterFaceMod.settings.seasons_info_mode = Lampa.Storage.get(SKEY.seasons_info_mode, 'aired');
+        InterFaceMod.settings.label_position = Lampa.Storage.get(SKEY.label_position, 'top-right');
+        InterFaceMod.settings.main_badges_enable = Lampa.Storage.get(SKEY.main_badges_enable, true);
+        InterFaceMod.settings.main_badges_show_quality = Lampa.Storage.get(SKEY.main_badges_show_quality, true);
+        InterFaceMod.settings.main_badges_show_year = Lampa.Storage.get(SKEY.main_badges_show_year, true);
+        InterFaceMod.settings.main_badges_show_tv_progress = Lampa.Storage.get(SKEY.main_badges_show_tv_progress, true);
+        InterFaceMod.settings.main_badges_show_next_episode = Lampa.Storage.get(SKEY.main_badges_show_next_episode, true);
+        InterFaceMod.settings.main_badges_show_rating = Lampa.Storage.get(SKEY.main_badges_show_rating, true);
+    } catch(e) {
+        console.log('Interface MOD: Error loading settings');
+    }
     
     InterFaceMod.settings.main_badges_show_type = !!InterFaceMod.settings.show_movie_type;
     InterFaceMod.settings.enabled = InterFaceMod.settings.seasons_info_mode !== 'none';
@@ -789,7 +826,14 @@ function loadSettings() {
 * START PLUGIN
 * ========================== */
 function startPlugin() {
-    if (typeof $ === 'undefined') { console.error('Interface MOD: jQuery not found'); return; }
+    // Проверка jQuery
+    if (typeof $ === 'undefined') {
+        console.error('Interface MOD: jQuery not found');
+        return;
+    }
+    
+    // Инициализация JacRed URL
+    initJacredUrl();
     
     loadSettings();
     registerSettings();
@@ -812,13 +856,15 @@ function startPlugin() {
 if (window.interface_mod_plus_loaded) return;
 window.interface_mod_plus_loaded = true;
 
-if (window.appready) startPlugin();
-else {
+if (window.appready) {
+    startPlugin();
+} else {
     Lampa.Listener.follow('app', function(event) {
         if (event.type === 'ready') startPlugin();
     });
 }
 
+// Манифест
 Lampa.Manifest = Lampa.Manifest || {};
 Lampa.Manifest.plugins = Lampa.Manifest.plugins || {};
 Lampa.Manifest.plugins.interface_mod = {
@@ -827,5 +873,6 @@ Lampa.Manifest.plugins.interface_mod = {
     description: 'Полный функционал: тип, цветной рейтинг, Sx a/b, дата новой серии, качество (JacRed), год'
 };
 
+// Экспорт
 window.season_info = InterFaceMod;
 })();
