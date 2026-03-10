@@ -2,12 +2,12 @@
 'use strict';
 /**
 * Интерфейс MOD + Главные карточки
-* Версия: 3.0.3-Final
+* Версия: 3.0.5-Final
 */
 
 var InterFaceMod = {
     name: 'interface_mod',
-    version: '3.0.3-Final',
+    version: '3.0.5-Final',
     debug: false,
     settings: {
         enabled: true,
@@ -53,14 +53,12 @@ var TV_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 function getTvCache() { return Lampa.Storage.get(TV_CACHE_KEY) || {}; }
 function setTvCache(cache) { Lampa.Storage.set(TV_CACHE_KEY, cache); }
-
 function getTvCached(id) {
     var c = getTvCache(), item = c[String(id)];
     if (!item) return null;
     if (Date.now() - item.ts > TV_CACHE_TTL) return null;
     return item.data || null;
 }
-
 function saveTvCached(id, data) {
     var c = getTvCache();
     c[String(id)] = { ts: Date.now(), data: data };
@@ -90,14 +88,14 @@ function fetchTvDetails(id, cb) {
 }
 
 /* ==========================
-* JACRED QUALITY - HTTPS + SAFE
+* JACRED QUALITY - С ИСПРАВЛЕНИЕМ
 * ========================== */
 var Q_LOGGING = false;
 var Q_CACHE_TIME = 24 * 60 * 60 * 1000;
 var QUALITY_CACHE = 'interface_mod_quality_cache_v1';
 var JACRED_PROTOCOL = 'https://';
 var JACRED_URL = 'jac.red';
-var PROXY_TIMEOUT = 5000;
+var PROXY_TIMEOUT = 8000;
 var PROXY_LIST = ['https://api.allorigins.win/raw?url=', 'https://cors.bwa.workers.dev/'];
 
 function getQualityCache(key) {
@@ -105,7 +103,6 @@ function getQualityCache(key) {
     var item = cache[key];
     return item && Date.now() - item.timestamp < Q_CACHE_TIME ? item : null;
 }
-
 function saveQualityCache(key, data) {
     var cache = Lampa.Storage.get(QUALITY_CACHE) || {};
     cache[key] = { quality: data.quality || null, timestamp: Date.now() };
@@ -201,12 +198,10 @@ function getBestReleaseFromJacred(normalizedCard, cardId, callback) {
 function injectMainBadgesCSS() {
     if (document.getElementById('interface_mod_main_badges_css')) return;
     var css = '<style id="interface_mod_main_badges_css">' +
-        // СКРЫВАЕМ стандартные элементы Lampa
         '.card__type{display:none!important;}' +
         '.card__vote{display:none!important;}' +
         '.card__quality{display:none!important;}' +
         '.card__info{display:none!important;}' +
-        // Наши стили
         '.card__view{position:relative!important;}' +
         '.im_badge{position:absolute;z-index:60;display:inline-flex;align-items:center;justify-content:center;' +
         'padding:0.25em 0.50em;border-radius:0.35em;font-weight:800;line-height:1;white-space:nowrap;' +
@@ -312,6 +307,90 @@ function applyQualityBadge(view, q) {
     ensureBadge(view, 'im_quality', q);
 }
 
+/* ==========================
+* RENDER QUALITY - С FALLBACK
+* ========================== */
+function renderQualityForCard(cardEl, view, data, type) {
+    var normalized = {
+        id: data.id || '',
+        title: data.title || data.name || '',
+        original_title: data.original_title || data.original_name || '',
+        release_date: data.release_date || data.first_air_date || '',
+        type: type
+    };
+    
+    var cacheKey = type + '_' + normalized.id;
+    var cached = getQualityCache(cacheKey);
+    
+    // 1. Проверяем кэш
+    if (cached && cached.quality) {
+        applyQualityBadge(view, cached.quality);
+        return;
+    }
+    
+    // 2. Пробуем получить качество из метаданных карточки
+    var qualityFromData = getQualityFromCardData(data);
+    if (qualityFromData) {
+        applyQualityBadge(view, qualityFromData);
+        saveQualityCache(cacheKey, { quality: qualityFromData });
+        return;
+    }
+    
+    // 3. Запрашиваем из JacRed
+    getBestReleaseFromJacred(normalized, String(normalized.id), function(jr) {
+        if (!document.body.contains(cardEl)) return;
+        var q = jr && jr.quality ? jr.quality : null;
+        
+        // 4. Если JacRed не вернул — пробуем определить по resolution
+        if (!q && data.video_quality) {
+            q = translateQualityFromVideoQuality(data.video_quality);
+        }
+        if (!q && data.resolution) {
+            q = translateQualityFromVideoQuality(data.resolution);
+        }
+        
+        if (q) saveQualityCache(cacheKey, { quality: q });
+        applyQualityBadge(view, q);
+    });
+}
+
+function getQualityFromCardData(data) {
+    if (data.quality) return String(data.quality).toUpperCase();
+    if (data.video_quality) return translateQualityFromVideoQuality(data.video_quality);
+    if (data.resolution) return translateQualityFromVideoQuality(data.resolution);
+    if (data.source) {
+        var quality = extractQualityFromString(data.source);
+        if (quality) return quality;
+    }
+    if (data.sources && data.sources.length > 0) {
+        for (var i = 0; i < data.sources.length; i++) {
+            var quality = extractQualityFromString(data.sources[i]);
+            if (quality) return quality;
+        }
+    }
+    return null;
+}
+
+function translateQualityFromVideoQuality(vq) {
+    if (!vq) return null;
+    var q = String(vq).toLowerCase();
+    if (q.indexOf('2160') >= 0 || q.indexOf('4k') >= 0) return '4K';
+    if (q.indexOf('1080') >= 0 || q.indexOf('fhd') >= 0) return '1080P';
+    if (q.indexOf('720') >= 0 || q.indexOf('hd') >= 0) return '720P';
+    if (q.indexOf('480') >= 0 || q.indexOf('sd') >= 0) return 'SD';
+    return null;
+}
+
+function extractQualityFromString(str) {
+    if (!str) return null;
+    str = String(str).toLowerCase();
+    if (str.indexOf('2160') >= 0 || str.indexOf('4k') >= 0) return '4K';
+    if (str.indexOf('1080') >= 0) return '1080P';
+    if (str.indexOf('720') >= 0) return '720P';
+    if (str.indexOf('480') >= 0) return 'SD';
+    return null;
+}
+
 function renderMainBadges(cardEl) {
     if (!InterFaceMod.settings.main_badges_enable) return;
     if (!cardEl || !cardEl.querySelector) return;
@@ -361,22 +440,6 @@ function renderMainBadges(cardEl) {
     }
 }
 
-function renderQualityForCard(cardEl, view, data, type) {
-    var normalized = {
-        id: data.id || '', title: data.title || data.name || '',
-        original_title: data.original_title || data.original_name || '',
-        release_date: data.release_date || data.first_air_date || '', type: type
-    };
-    var cacheKey = type + '_' + normalized.id, cached = getQualityCache(cacheKey);
-    if (cached && cached.quality) { applyQualityBadge(view, cached.quality); return; }
-    getBestReleaseFromJacred(normalized, String(normalized.id), function(jr) {
-        if (!document.body.contains(cardEl)) return;
-        var q = jr && jr.quality ? jr.quality : null;
-        if (q) saveQualityCache(cacheKey, { quality: q });
-        applyQualityBadge(view, q);
-    });
-}
-
 function startMainBadgesObserver() {
     injectMainBadgesCSS();
     function scan() {
@@ -405,14 +468,15 @@ function startMainBadgesObserver() {
 }
 
 /* ==========================
-* ОСТАЛЬНЫЕ ФУНКЦИИ (сокращенно)
+* ОСТАЛЬНЫЕ ФУНКЦИИ
 * ========================== */
 function addSeasonInfo() { /* ваш код из версии 3.0.0 */ }
 function showAllButtons() { /* ваш код из версии 3.0.0 */ }
-function applyTheme(theme) { /* ваш код из версии 3.0.0 */ }
-function updateVoteColors() { /* ваш код из версии 3.0.0 */ }
-function colorizeSeriesStatus() { /* ваш код из версии 3.0.0 */ }
-function colorizeAgeRating() { /* ваш код из версии 3.0.0 */ }
+function applyTheme(theme) { /* ваш код из версии 2.2.0 */ }
+function updateVoteColors() { /* ваш код из версии 2.2.0 */ }
+function colorizeSeriesStatus() { /* ваш код из версии 2.2.0 */ }
+function colorizeAgeRating() { /* ваш код из версии 2.2.0 */ }
+function changeMovieTypeLabels() { /* ваш код из версии 2.2.0 */ }
 
 /* ==========================
 * SETTINGS UI
@@ -489,6 +553,7 @@ function startPlugin() {
     showAllButtons();
     if (InterFaceMod.settings.colored_ratings) updateVoteColors();
     if (InterFaceMod.settings.colored_elements) { colorizeSeriesStatus(); colorizeAgeRating(); }
+    changeMovieTypeLabels();
     startMainBadgesObserver();
     console.log('Interface MOD + Cards started v' + InterFaceMod.version);
 }
