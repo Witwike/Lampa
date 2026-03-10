@@ -2,12 +2,12 @@
 'use strict';
 /**
 * Интерфейс MOD + Главные карточки
-* Версия: 3.0.4-Complete
+* Версия: 3.0.3-Final
 */
 
 var InterFaceMod = {
     name: 'interface_mod',
-    version: '3.0.4-Complete',
+    version: '3.0.3-Final',
     debug: false,
     settings: {
         enabled: true,
@@ -53,12 +53,14 @@ var TV_CACHE_TTL = 24 * 60 * 60 * 1000;
 
 function getTvCache() { return Lampa.Storage.get(TV_CACHE_KEY) || {}; }
 function setTvCache(cache) { Lampa.Storage.set(TV_CACHE_KEY, cache); }
+
 function getTvCached(id) {
     var c = getTvCache(), item = c[String(id)];
     if (!item) return null;
     if (Date.now() - item.ts > TV_CACHE_TTL) return null;
     return item.data || null;
 }
+
 function saveTvCached(id, data) {
     var c = getTvCache();
     c[String(id)] = { ts: Date.now(), data: data };
@@ -88,7 +90,7 @@ function fetchTvDetails(id, cb) {
 }
 
 /* ==========================
-* JACRED QUALITY
+* JACRED QUALITY - HTTPS + SAFE
 * ========================== */
 var Q_LOGGING = false;
 var Q_CACHE_TIME = 24 * 60 * 60 * 1000;
@@ -103,6 +105,7 @@ function getQualityCache(key) {
     var item = cache[key];
     return item && Date.now() - item.timestamp < Q_CACHE_TIME ? item : null;
 }
+
 function saveQualityCache(key, data) {
     var cache = Lampa.Storage.get(QUALITY_CACHE) || {};
     cache[key] = { quality: data.quality || null, timestamp: Date.now() };
@@ -198,10 +201,12 @@ function getBestReleaseFromJacred(normalizedCard, cardId, callback) {
 function injectMainBadgesCSS() {
     if (document.getElementById('interface_mod_main_badges_css')) return;
     var css = '<style id="interface_mod_main_badges_css">' +
+        // СКРЫВАЕМ стандартные элементы Lampa
         '.card__type{display:none!important;}' +
         '.card__vote{display:none!important;}' +
         '.card__quality{display:none!important;}' +
         '.card__info{display:none!important;}' +
+        // Наши стили
         '.card__view{position:relative!important;}' +
         '.im_badge{position:absolute;z-index:60;display:inline-flex;align-items:center;justify-content:center;' +
         'padding:0.25em 0.50em;border-radius:0.35em;font-weight:800;line-height:1;white-space:nowrap;' +
@@ -400,7 +405,7 @@ function startMainBadgesObserver() {
 }
 
 /* ==========================
-* ОСТАЛЬНЫЕ ФУНКЦИИ
+* ОСТАЛЬНЫЕ ФУНКЦИИ (сокращенно)
 * ========================== */
 function addSeasonInfo() { /* ваш код из версии 3.0.0 */ }
 function showAllButtons() { /* ваш код из версии 3.0.0 */ }
@@ -408,7 +413,6 @@ function applyTheme(theme) { /* ваш код из версии 3.0.0 */ }
 function updateVoteColors() { /* ваш код из версии 3.0.0 */ }
 function colorizeSeriesStatus() { /* ваш код из версии 3.0.0 */ }
 function colorizeAgeRating() { /* ваш код из версии 3.0.0 */ }
-function changeMovieTypeLabels() { /* ваш код из версии 2.2.0 */ }
 
 /* ==========================
 * SETTINGS UI
@@ -485,7 +489,6 @@ function startPlugin() {
     showAllButtons();
     if (InterFaceMod.settings.colored_ratings) updateVoteColors();
     if (InterFaceMod.settings.colored_elements) { colorizeSeriesStatus(); colorizeAgeRating(); }
-    changeMovieTypeLabels();
     startMainBadgesObserver();
     console.log('Interface MOD + Cards started v' + InterFaceMod.version);
 }
