@@ -1,8 +1,8 @@
 (function () {
 'use strict';
 /**
-* Интерфейс MOD + Главные карточки (Фильм/Сериал, рейтинг с цветом, сезон/серии, дата новой серии, качество, год)
-* Версия: 3.0.1-fixed
+* Интерфейс MOD + Главные карточки (Финальная версия)
+* Версия: 3.0.1-final
 */
 
 /* ==========================
@@ -10,7 +10,7 @@
 * ========================== */
 var InterFaceMod = {
     name: 'interface_mod',
-    version: '3.0.1-fixed',
+    version: '3.0.1-final',
     debug: false,
     settings: {
         enabled: true,
@@ -126,15 +126,29 @@ function fetchTvDetails(id, cb) {
 }
 
 /* ==========================
-* JACRED QUALITY
+* JACRED QUALITY - ИСПРАВЛЕНО!
 * ========================== */
 var Q_LOGGING = false;
 var Q_CACHE_TIME = 24 * 60 * 60 * 1000;
 var QUALITY_CACHE = 'interface_mod_quality_cache_v1';
 var JACRED_PROTOCOL = 'https://';
-var JACRED_URL = 'jac.red';
+// ИСПРАВЛЕНО: безопасная инициализация
+var JACRED_URL = 'jac.red'; // Дефолтное значение
 var PROXY_TIMEOUT = 5000;
 var PROXY_LIST = ['https://api.allorigins.win/raw?url=', 'https://cors.bwa.workers.dev/'];
+
+// Функция безопасного получения JacRed URL
+function getJacredUrl() {
+    try {
+        if (typeof Lampa !== 'undefined' && Lampa.Storage && typeof Lampa.Storage.get === 'function') {
+            var stored = Lampa.Storage.get('jacred.xyz');
+            if (stored) return stored.replace(/^https?:\/\//, '');
+        }
+    } catch(e) {
+        console.log('Interface MOD: Cannot access Storage for JacRed URL');
+    }
+    return 'jac.red'; // Дефолтное значение
+}
 
 function getQualityCache(key) {
     var cache = Lampa.Storage.get(QUALITY_CACHE) || {};
@@ -263,20 +277,10 @@ function getBestReleaseFromJacred(normalizedCard, cardId, callback) {
     
     var strategies = [];
     if (normalizedCard.original_title && /[a-zа-яё0-9]/i.test(normalizedCard.original_title)) {
-        strategies.push({
-            title: normalizedCard.original_title.trim(),
-            year: year,
-            exact: true,
-            name: 'OriginalTitle'
-        });
+        strategies.push({ title: normalizedCard.original_title.trim(), year: year, exact: true, name: 'OriginalTitle' });
     }
     if (normalizedCard.title && /[a-zа-яё0-9]/i.test(normalizedCard.title)) {
-        strategies.push({
-            title: normalizedCard.title.trim(),
-            year: year,
-            exact: true,
-            name: 'Title'
-        });
+        strategies.push({ title: normalizedCard.title.trim(), year: year, exact: true, name: 'Title' });
     }
     
     (function run(ix) {
@@ -297,29 +301,23 @@ function injectMainBadgesCSS() {
     
     var css =
         '<style id="interface_mod_main_badges_css">' +
-        /* СКРЫВАЕМ стандартные элементы Lampa */
+        // СКРЫВАЕМ стандартные элементы Lampa
         '.card__type{display:none!important;}' +
         '.card__vote{display:none!important;}' +
-        /* Наши стили */
+        // Наши стили
         '.card__view{position:relative!important;}' +
         '.im_badge{position:absolute;z-index:60;display:inline-flex;align-items:center;justify-content:center;' +
         'padding:0.25em 0.50em;border-radius:0.35em;font-weight:800;line-height:1;white-space:nowrap;' +
         'font-size:0.80em;backdrop-filter: blur(2px);}' +
-        /* TYPE (верх слева) */
         '.im_type{top:0.55em;left:0.55em;background:rgba(156,39,176,0.95);color:#fff;}' +
-        /* RATING (верх справа) */
         '.im_rating{top:0.55em;right:0.55em;background:rgba(255,152,0,0.95);color:#111;}' +
         '.im_rating.r_red{background:rgba(244,67,54,0.95);color:#fff;}' +
         '.im_rating.r_orange{background:rgba(255,152,0,0.95);color:#111;}' +
         '.im_rating.r_blue{background:rgba(33,150,243,0.95);color:#fff;}' +
         '.im_rating.r_green{background:rgba(76,175,80,0.95);color:#fff;}' +
-        /* TV прогресс (слева снизу выше всех) */
         '.im_tv{left:0.55em;bottom:2.55em;background:rgba(255,193,7,0.95);color:#111;}' +
-        /* Next episode (слева снизу середина) */
         '.im_next{left:0.55em;bottom:1.55em;background:rgba(33,150,243,0.95);color:#fff;}' +
-        /* Quality (слева снизу) */
         '.im_quality{left:0.55em;bottom:0.55em;background:rgba(76,175,80,0.95);color:#fff;}' +
-        /* Year (справа снизу) */
         '.im_year{right:0.55em;bottom:0.55em;background:rgba(255,152,0,0.95);color:#111;}' +
         '</style>';
     
@@ -1193,6 +1191,9 @@ function loadSettings() {
 * START PLUGIN
 * ========================== */
 function startPlugin() {
+    // Инициализация JacRed URL (БЕЗОПАСНО!)
+    JACRED_URL = getJacredUrl();
+    
     loadSettings();
     registerSettings();
     applyTheme(InterFaceMod.settings.theme);
