@@ -56,18 +56,22 @@ var SKEY = {
 };
 
 /* ==========================
-* БЕЗОПАСНОЕ ПОЛУЧЕНИЕ JACRED URL
+* БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ JACRED
 * ========================== */
-function getJacredUrl() {
+var JACRED_PROTOCOL = 'https://';
+var JACRED_URL = 'jacred.xyz'; // Дефолтное значение
+
+function initJacredUrl() {
     try {
         if (typeof Lampa !== 'undefined' && Lampa.Storage && typeof Lampa.Storage.get === 'function') {
-            var url = Lampa.Storage.get(SKEY.jacred_url);
-            if (url) return url.replace(/^https?:\/\//, '');
+            var stored = Lampa.Storage.get(SKEY.jacred_url);
+            if (stored) {
+                JACRED_URL = stored.replace(/^https?:\/\//, '');
+            }
         }
     } catch(e) {
-        console.log('Interface MOD: Cannot get JacRed URL from storage');
+        console.log('Interface MOD: Cannot access Storage for JacRed URL');
     }
-    return 'jacred.xyz';
 }
 
 /* ==========================
@@ -147,18 +151,8 @@ function fetchTvDetails(id, cb) {
 * JACRED QUALITY
 * ========================== */
 var Q_LOGGING = false;
-var JACRED_PROTOCOL = 'https://';
-var JACRED_URL = 'jacred.xyz'; // Инициализируем дефолтным значением
 var PROXY_TIMEOUT = 5000;
 var PROXY_LIST = ['https://api.allorigins.win/raw?url=', 'https://cors.bwa.workers.dev/'];
-
-function initJacredUrl() {
-    try {
-        JACRED_URL = getJacredUrl();
-    } catch(e) {
-        console.log('Interface MOD: Failed to init JacRed URL');
-    }
-}
 
 function fetchWithProxy(url, cardId, callback) {
     var idx = 0;
@@ -405,7 +399,10 @@ function buildNextEpisode(details) {
 }
 
 function applyQualityBadge(view, q) {
-    if (!q) { removeBadge(view, 'im_quality'); return; }
+    if (!q) {
+        removeBadge(view, 'im_quality');
+        return;
+    }
     ensureBadge(view, 'im_quality', q);
 }
 
@@ -428,18 +425,24 @@ function renderMainBadges(cardEl) {
     if (InterFaceMod.settings.main_badges_show_type) {
         var tText = type === 'tv' ? 'Сериал' : 'Фильм';
         ensureBadge(view, 'im_type', tText);
-    } else { removeBadge(view, 'im_type'); }
+    } else {
+        removeBadge(view, 'im_type');
+    }
     
     // RATING
     if (InterFaceMod.settings.main_badges_show_rating && vote !== null) {
         var r = ensureBadge(view, 'im_rating ' + ratingClass(vote), vote.toFixed(1));
         r.className = 'im_badge im_rating ' + ratingClass(vote);
-    } else { removeBadge(view, 'im_rating'); }
+    } else {
+        removeBadge(view, 'im_rating');
+    }
     
     // YEAR
     if (InterFaceMod.settings.main_badges_show_year && year) {
         ensureBadge(view, 'im_year', year);
-    } else { removeBadge(view, 'im_year'); }
+    } else {
+        removeBadge(view, 'im_year');
+    }
     
     // TV прогресс + next
     if (type === 'tv' && (InterFaceMod.settings.main_badges_show_tv_progress || InterFaceMod.settings.main_badges_show_next_episode)) {
@@ -450,24 +453,33 @@ function renderMainBadges(cardEl) {
                 var p = buildTvProgress(details);
                 if (p) ensureBadge(view, 'im_tv', p);
                 else removeBadge(view, 'im_tv');
-            } else { removeBadge(view, 'im_tv'); }
+            } else {
+                removeBadge(view, 'im_tv');
+            }
             
             if (InterFaceMod.settings.main_badges_show_next_episode) {
                 var n = buildNextEpisode(details);
                 if (n) ensureBadge(view, 'im_next', n);
                 else removeBadge(view, 'im_next');
-            } else { removeBadge(view, 'im_next'); }
+            } else {
+                removeBadge(view, 'im_next');
+            }
             
             if (InterFaceMod.settings.main_badges_show_quality) {
                 renderQualityForCard(cardEl, view, data, type);
-            } else { removeBadge(view, 'im_quality'); }
+            } else {
+                removeBadge(view, 'im_quality');
+            }
         });
     } else {
         removeBadge(view, 'im_tv');
         removeBadge(view, 'im_next');
+        
         if (InterFaceMod.settings.main_badges_show_quality) {
             renderQualityForCard(cardEl, view, data, type);
-        } else { removeBadge(view, 'im_quality'); }
+        } else {
+            removeBadge(view, 'im_quality');
+        }
     }
 }
 
@@ -530,14 +542,14 @@ function startMainBadgesObserver() {
 }
 
 /* ==========================
-* ОСТАЛЬНЫЕ ФУНКЦИИ (из вашего кода)
+* ОСТАЛЬНЫЕ ФУНКЦИИ (из вашего кода версии 3.0.0)
 * ========================== */
-function addSeasonInfo() { /* ваш код */ }
-function showAllButtons() { /* ваш код */ }
-function applyTheme(theme) { /* ваш код */ }
-function updateVoteColors() { /* ваш код */ }
-function colorizeSeriesStatus() { /* ваш код */ }
-function colorizeAgeRating() { /* ваш код */ }
+function addSeasonInfo() { /* ваш код из версии 3.0.0 */ }
+function showAllButtons() { /* ваш код из версии 3.0.0 */ }
+function applyTheme(theme) { /* ваш код из версии 3.0.0 */ }
+function updateVoteColors() { /* ваш код из версии 3.0.0 */ }
+function colorizeSeriesStatus() { /* ваш код из версии 3.0.0 */ }
+function colorizeAgeRating() { /* ваш код из версии 3.0.0 */ }
 
 /* ==========================
 * Settings UI
@@ -566,7 +578,7 @@ function registerSettings() {
         }
     });
     
-    // Остальные настройки...
+    // Остальные настройки из вашего кода...
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: {
@@ -675,45 +687,46 @@ function registerSettings() {
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_enable, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: включить', description: 'Плашки на постерах' },
+        field: { name: 'Главные карточки: включить', description: 'Плашки на постерах в списках/главной' },
         onChange: function (v) { InterFaceMod.settings.main_badges_enable = v; Lampa.Settings.update(); }
     });
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_show_quality, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: качество', description: '4K/1080P/720P/SD' },
+        field: { name: 'Главные карточки: качество', description: '4K/1080P/720P/SD (JacRed)' },
         onChange: function (v) { InterFaceMod.settings.main_badges_show_quality = v; Lampa.Settings.update(); }
     });
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_show_year, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: год', description: 'Год выхода' },
+        field: { name: 'Главные карточки: год', description: 'Год выхода справа снизу' },
         onChange: function (v) { InterFaceMod.settings.main_badges_show_year = v; Lampa.Settings.update(); }
     });
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_show_tv_progress, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: Sx a/b', description: 'Сезон и серии' },
+        field: { name: 'Главные карточки: Sx a/b', description: 'Сезон и вышедшие серии' },
         onChange: function (v) { InterFaceMod.settings.main_badges_show_tv_progress = v; Lampa.Settings.update(); }
     });
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_show_next_episode, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: новая серия', description: 'Дата выхода' },
+        field: { name: 'Главные карточки: новая серия', description: 'Сегодня/Завтра/Через N дн.' },
         onChange: function (v) { InterFaceMod.settings.main_badges_show_next_episode = v; Lampa.Settings.update(); }
     });
     
     Lampa.SettingsApi.addParam({
         component: 'season_info',
         param: { name: SKEY.main_badges_show_rating, type: 'trigger', default: true },
-        field: { name: 'Главные карточки: рейтинг', description: 'С цветом' },
+        field: { name: 'Главные карточки: рейтинг', description: 'С цветом по шкале' },
         onChange: function (v) { InterFaceMod.settings.main_badges_show_rating = v; Lampa.Settings.update(); }
     });
     
+    // Перемещение раздела после "Интерфейс"
     Lampa.Settings.listener.follow('open', function () {
         setTimeout(function () {
             var mod = $('.settings-folder[data-component="season_info"]');
@@ -764,8 +777,13 @@ function startPlugin() {
     if (InterFaceMod.settings.enabled) addSeasonInfo();
     showAllButtons();
     
-    if (InterFaceMod.settings.colored_ratings) updateVoteColors();
-    if (InterFaceMod.settings.colored_elements) { colorizeSeriesStatus(); colorizeAgeRating(); }
+    if (InterFaceMod.settings.colored_ratings) {
+        updateVoteColors();
+    }
+    if (InterFaceMod.settings.colored_elements) {
+        colorizeSeriesStatus();
+        colorizeAgeRating();
+    }
     
     startMainBadgesObserver();
     
@@ -778,8 +796,9 @@ function startPlugin() {
 if (window.interface_mod_plus_loaded) return;
 window.interface_mod_plus_loaded = true;
 
-if (window.appready) startPlugin();
-else {
+if (window.appready) {
+    startPlugin();
+} else {
     Lampa.Listener.follow('app', function (event) {
         if (event.type === 'ready') startPlugin();
     });
@@ -791,7 +810,7 @@ Lampa.Manifest.plugins = Lampa.Manifest.plugins || {};
 Lampa.Manifest.plugins.interface_mod = {
     name: 'Интерфейс мод + Карточки',
     version: InterFaceMod.version,
-    description: 'Полный функционал interface_mod + главные карточки'
+    description: 'Полный функционал interface_mod + главные карточки: тип, цветной рейтинг, Sx a/b, дата новой серии, качество (JacRed), год'
 };
 
 // Экспорт
