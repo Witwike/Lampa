@@ -19,102 +19,185 @@
         }
     };
 
-    // 1. Сезоны на постере полной карточки
+    // 1. Информация о сезонах на постере полной карточки
     function addSeasonInfo() {
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type !== 'complite' || !e.data.movie?.number_of_seasons) return;
-            if (InterFaceMod.settings.seasons_info_mode === 'none') return;
+        Lampa.Listener.follow('full', function (data) {
+            if (data.type === 'complite' && data.data.movie.number_of_seasons) {
+                if (InterFaceMod.settings.seasons_info_mode === 'none') return;
 
-            const movie = e.data.movie;
-            const status = movie.status || '';
-            const totalS = movie.number_of_seasons  || 0;
-            const totalE = movie.number_of_episodes || 0;
+                var movie = data.data.movie;
+                var status = movie.status;
+                var totalSeasons = movie.number_of_seasons || 0;
+                var totalEpisodes = movie.number_of_episodes || 0;
 
-            let airedS = 0, airedE = 0;
-            const now = new Date();
+                var airedSeasons = 0;
+                var airedEpisodes = 0;
+                var currentDate = new Date();
 
-            if (movie.seasons?.length) {
-                movie.seasons.forEach(s => {
-                    if (s.season_number === 0) return;
-                    if (s.air_date && new Date(s.air_date) <= now) {
-                        airedS++;
-                        airedE += s.episode_count || 0;
+                if (movie.seasons) {
+                    movie.seasons.forEach(function(season) {
+                        if (season.season_number === 0) return;
+                        var seasonAired = false;
+                        var seasonEpisodes = 0;
+
+                        if (season.air_date) {
+                            var airDate = new Date(season.air_date);
+                            if (airDate <= currentDate) {
+                                seasonAired = true;
+                                airedSeasons++;
+                            }
+                        }
+
+                        if (season.episodes) {
+                            season.episodes.forEach(function(episode) {
+                                if (episode.air_date) {
+                                    var epAirDate = new Date(episode.air_date);
+                                    if (epAirDate <= currentDate) {
+                                        seasonEpisodes++;
+                                        airedEpisodes++;
+                                    }
+                                }
+                            });
+                        } else if (seasonAired && season.episode_count) {
+                            seasonEpisodes = season.episode_count;
+                            airedEpisodes += seasonEpisodes;
+                        }
+                    });
+                } else if (movie.last_episode_to_air) {
+                    airedSeasons = movie.last_episode_to_air.season_number || 0;
+                    if (movie.last_episode_to_air.episode_number) {
+                        var lastSeason = movie.last_episode_to_air.season_number;
+                        var lastEpisode = movie.last_episode_to_air.episode_number;
+
+                        if (movie.seasons) {
+                            airedEpisodes = 0;
+                            movie.seasons.forEach(function(season) {
+                                if (season.season_number === 0) return;
+                                if (season.season_number < lastSeason) {
+                                    airedEpisodes += season.episode_count || 0;
+                                } else if (season.season_number === lastSeason) {
+                                    airedEpisodes += lastEpisode;
+                                }
+                            });
+                        }
                     }
-                });
+                }
+
+                if (airedSeasons === 0) airedSeasons = totalSeasons;
+                if (airedEpisodes === 0) airedEpisodes = totalEpisodes;
+
+                if (movie.next_episode_to_air && totalEpisodes > 0) {
+                    var nextSeason = movie.next_episode_to_air.season_number;
+                    var nextEpisode = movie.next_episode_to_air.episode_number;
+                    var remainingEpisodes = 0;
+
+                    if (movie.seasons) {
+                        movie.seasons.forEach(function(season) {
+                            if (season.season_number === nextSeason) {
+                                remainingEpisodes = (season.episode_count || 0) - nextEpisode + 1;
+                            } else if (season.season_number > nextSeason) {
+                                remainingEpisodes += season.episode_count || 0;
+                            }
+                        });
+                    }
+
+                    if (remainingEpisodes > 0) {
+                        var calculatedAired = totalEpisodes - remainingEpisodes;
+                        if (calculatedAired >= 0 && calculatedAired <= totalEpisodes) {
+                            airedEpisodes = calculatedAired;
+                        }
+                    }
+                }
+
+                if (totalEpisodes > 0 && airedEpisodes > totalEpisodes) {
+                    airedEpisodes = totalEpisodes;
+                }
+
+                function plural(number, one, two, five) {
+                    let n = Math.abs(number);
+                    n %= 100;
+                    if (n >= 5 && n <= 20) return five;
+                    n %= 10;
+                    if (n === 1) return one;
+                    if (n >= 2 && n <= 4) return two;
+                    return five;
+                }
+
+                function getStatusText(status) {
+                    if (status === 'Ended') return 'Завершён';
+                    if (status === 'Canceled') return 'Отменён';
+                    if (status === 'Returning Series') return 'Выходит';
+                    if (status === 'In Production') return 'В производстве';
+                    return status || 'Неизвестно';
+                }
+
+                var displaySeasons, displayEpisodes;
+                var isCompleted = (status === 'Ended' || status === 'Canceled');
+                var bgColor = isCompleted ? 'rgba(46, 204, 113, 0.85)' : 'rgba(244, 67, 54, 0.85)';
+
+                if (InterFaceMod.settings.seasons_info_mode === 'aired') {
+                    displaySeasons = airedSeasons;
+                    displayEpisodes = airedEpisodes;
+                } else if (InterFaceMod.settings.seasons_info_mode === 'total') {
+                    displaySeasons = totalSeasons;
+                    displayEpisodes = totalEpisodes;
+                } else {
+                    return;
+                }
+
+                var seasonsText = plural(displaySeasons, 'сезон', 'сезона', 'сезонов');
+                var episodesText = plural(displayEpisodes, 'серия', 'серии', 'серий');
+
+                var text = displaySeasons + ' ' + seasonsText + ' ' + displayEpisodes + ' ' + episodesText;
+                if (!isCompleted && InterFaceMod.settings.seasons_info_mode === 'aired' && totalEpisodes > airedEpisodes && totalEpisodes > 0) {
+                    text += ' из ' + totalEpisodes;
+                }
+
+                var infoElement = $('<div class="season-info-label"></div>');
+                infoElement.append($('<div></div>').text(text));
+
+                if (isCompleted) {
+                    infoElement.append($('<div></div>').text(getStatusText(status)));
+                }
+
+                var positionStyles = {
+                    'top-right':   { top: '1.4em', right: '-0.8em' },
+                    'top-left':    { top: '1.4em', left: '-0.8em'  },
+                    'bottom-right':{ bottom: '1.4em', right: '-0.8em' },
+                    'bottom-left': { bottom: '1.4em', left: '-0.8em'  }
+                };
+
+                var position = InterFaceMod.settings.label_position || 'top-right';
+                var posStyle = positionStyles[position] || positionStyles['top-right'];
+
+                var commonStyles = {
+                    'background-color': bgColor,
+                    'color': 'white',
+                    'padding': '0.4em 0.6em',
+                    'border-radius': '0.3em',
+                    'font-size': '0.8em',
+                    'z-index': '999',
+                    'text-align': 'center',
+                    'white-space': 'nowrap',
+                    'line-height': '1.2em',
+                    'backdrop-filter': 'blur(2px)',
+                    'box-shadow': '0 2px 5px rgba(0, 0, 0, 0.2)'
+                };
+
+                infoElement.css($.extend({}, commonStyles, posStyle));
+
+                setTimeout(function() {
+                    var poster = $(data.object.activity.render()).find('.full-start-new__poster');
+                    if (poster.length) {
+                        poster.css('position', 'relative');
+                        poster.append(infoElement);
+                    }
+                }, 100);
             }
-
-            if (movie.last_episode_to_air?.season_number) {
-                airedS = Math.max(airedS, movie.last_episode_to_air.season_number);
-            }
-
-            airedS = airedS || totalS;
-            airedE = airedE || totalE;
-
-            const plural = (n, w1, w2, w5) => {
-                n = Math.abs(n) % 100;
-                if (n > 4 && n < 21) return w5;
-                n %= 10;
-                if (n === 1) return w1;
-                if (n > 1 && n < 5) return w2;
-                return w5;
-            };
-
-            const statusRu = {
-                'Ended': 'Завершён',
-                'Canceled': 'Отменён',
-                'Returning Series': 'Выходит',
-                'In Production': 'В производстве'
-            }[status] || status || '—';
-
-            let txt = '';
-            let bg  = (status === 'Ended' || status === 'Canceled')
-                ? 'rgba(46,204,113,0.85)'
-                : 'rgba(244,67,54,0.85)';
-
-            if (InterFaceMod.settings.seasons_info_mode === 'aired') {
-                txt = airedS + ' ' + plural(airedS,'сезон','сезона','сезонов') + ' ' +
-                      airedE + ' ' + plural(airedE,'серия','серии','серий');
-                if (totalE > airedE && totalE > 0) txt += ' из ' + totalE;
-            } else {
-                txt = totalS + ' ' + plural(totalS,'сезон','сезона','сезонов') + ' ' +
-                      totalE + ' ' + plural(totalE,'серия','серии','серий');
-            }
-
-            const $label = $('<div class="season-info-label"></div>').text(txt);
-            if (statusRu !== '—') $label.append($('<div></div>').text(statusRu));
-
-            const pos = InterFaceMod.settings.label_position || 'top-right';
-            const positions = {
-                'top-right':   { top:'1.3em', right:'-0.7em' },
-                'top-left':    { top:'1.3em', left:'-0.7em'  },
-                'bottom-right':{ bottom:'1.3em', right:'-0.7em' },
-                'bottom-left': { bottom:'1.3em', left:'-0.7em'  }
-            };
-
-            $label.css({
-                position: 'absolute',
-                ...positions[pos],
-                background: bg,
-                color: 'white',
-                padding: '0.45em 0.7em',
-                borderRadius: '0.35em',
-                fontSize: '0.81em',
-                zIndex: 999,
-                textAlign: 'center',
-                lineHeight: 1.22,
-                backdropFilter: 'blur(3px)',
-                boxShadow: '0 2px 7px rgba(0,0,0,0.4)',
-                whiteSpace: 'nowrap'
-            });
-
-            setTimeout(() => {
-                const $poster = $(e.object.activity.render()).find('.full-start__poster, .full-start-new__poster');
-                if ($poster.length) $poster.css('position','relative').append($label);
-            }, 80);
         });
     }
 
-    // 2. Полная функция showAllButtons() — ваша оригинальная реализация
+    // 2. Показ всех кнопок в карточке (полностью ваш оригинальный код)
     function showAllButtons() {
         var buttonStyle = document.createElement('style');
         buttonStyle.id = 'interface_mod_buttons_style';
@@ -143,11 +226,16 @@
                     if (!element) return;
 
                     var targetContainer = element.find('.full-start-new__buttons');
-                    if (!targetContainer.length) targetContainer = element.find('.full-start__buttons');
-                    if (!targetContainer.length) targetContainer = element.find('.buttons-container');
+                    if (!targetContainer.length) {
+                        targetContainer = element.find('.full-start__buttons');
+                    }
+                    if (!targetContainer.length) {
+                        targetContainer = element.find('.buttons-container');
+                    }
                     if (!targetContainer.length) return;
 
                     var allButtons = [];
+
                     var buttonSelectors = [
                         '.buttons--container .full-start__button',
                         '.full-start-new__buttons .full-start__button',
@@ -165,7 +253,13 @@
 
                     if (allButtons.length === 0) return;
 
-                    var categories = { online: [], torrent: [], trailer: [], other: [] };
+                    var categories = {
+                        online: [],
+                        torrent: [],
+                        trailer: [],
+                        other: []
+                    };
+
                     var addedButtonTexts = {};
 
                     $(allButtons).each(function() {
@@ -176,10 +270,15 @@
                         if (!buttonText || addedButtonTexts[buttonText]) return;
                         addedButtonTexts[buttonText] = true;
 
-                        if (className.includes('online')) categories.online.push(button);
-                        else if (className.includes('torrent')) categories.torrent.push(button);
-                        else if (className.includes('trailer')) categories.trailer.push(button);
-                        else categories.other.push(button);
+                        if (className.includes('online')) {
+                            categories.online.push(button);
+                        } else if (className.includes('torrent')) {
+                            categories.torrent.push(button);
+                        } else if (className.includes('trailer')) {
+                            categories.trailer.push(button);
+                        } else {
+                            categories.other.push(button);
+                        }
                     });
 
                     var buttonSortOrder = ['online', 'torrent', 'trailer', 'other'];
@@ -187,7 +286,11 @@
                     var needToggle = Lampa.Controller.enabled().name === 'full_start';
                     if (needToggle) Lampa.Controller.toggle('settings_component');
 
-                    targetContainer.css({ display: 'flex', flexWrap: 'wrap', gap: '10px' });
+                    targetContainer.css({
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: '10px'
+                    });
 
                     buttonSortOrder.forEach(function(category) {
                         categories[category].forEach(function(button) {
@@ -215,68 +318,89 @@
         }
 
         Lampa.Listener.follow('full', function(e) {
-            if (e.type === 'complite' && e.object && e.object.activity && InterFaceMod.settings.show_buttons && !Lampa.FullCard) {
-                setTimeout(function() {
-                    var fullContainer = e.object.activity.render();
-                    var targetContainer = fullContainer.find('.full-start-new__buttons') ||
-                                          fullContainer.find('.full-start__buttons') ||
-                                          fullContainer.find('.buttons-container');
-                    if (!targetContainer.length) return;
+            if (e.type === 'complite' && e.object && e.object.activity) {
+                if (InterFaceMod.settings.show_buttons && !Lampa.FullCard) {
+                    setTimeout(function() {
+                        var fullContainer = e.object.activity.render();
+                        var targetContainer = fullContainer.find('.full-start-new__buttons');
+                        if (!targetContainer.length) {
+                            targetContainer = fullContainer.find('.full-start__buttons');
+                        }
+                        if (!targetContainer.length) {
+                            targetContainer = fullContainer.find('.buttons-container');
+                        }
+                        if (!targetContainer.length) return;
 
-                    targetContainer.css({ display: 'flex', flexWrap: 'wrap', gap: '10px' });
-
-                    var allButtons = [];
-                    var buttonSelectors = [
-                        '.buttons--container .full-start__button',
-                        '.full-start-new__buttons .full-start__button',
-                        '.full-start__buttons .full-start__button',
-                        '.buttons-container .button',
-                        '.full-start-new__buttons .button',
-                        '.full-start__buttons .button'
-                    ];
-
-                    buttonSelectors.forEach(function(selector) {
-                        fullContainer.find(selector).each(function() {
-                            allButtons.push(this);
+                        targetContainer.css({
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '10px'
                         });
-                    });
 
-                    if (allButtons.length === 0) return;
+                        var allButtons = [];
+                        var buttonSelectors = [
+                            '.buttons--container .full-start__button',
+                            '.full-start-new__buttons .full-start__button',
+                            '.full-start__buttons .full-start__button',
+                            '.buttons-container .button',
+                            '.full-start-new__buttons .button',
+                            '.full-start__buttons .button'
+                        ];
 
-                    var categories = { online: [], torrent: [], trailer: [], other: [] };
-                    var addedButtonTexts = {};
-
-                    $(allButtons).each(function() {
-                        var button = this;
-                        var buttonText = $(button).text().trim();
-                        var className = button.className || '';
-
-                        if (!buttonText || addedButtonTexts[buttonText]) return;
-                        addedButtonTexts[buttonText] = true;
-
-                        if (className.includes('online')) categories.online.push(button);
-                        else if (className.includes('torrent')) categories.torrent.push(button);
-                        else if (className.includes('trailer')) categories.trailer.push(button);
-                        else categories.other.push(button);
-                    });
-
-                    var buttonSortOrder = ['online', 'torrent', 'trailer', 'other'];
-
-                    var needToggle = Lampa.Controller.enabled().name === 'full_start';
-                    if (needToggle) Lampa.Controller.toggle('settings_component');
-
-                    buttonSortOrder.forEach(function(category) {
-                        categories[category].forEach(function(button) {
-                            targetContainer.append(button);
+                        buttonSelectors.forEach(function(selector) {
+                            fullContainer.find(selector).each(function() {
+                                allButtons.push(this);
+                            });
                         });
-                    });
 
-                    if (needToggle) {
-                        setTimeout(function() {
-                            Lampa.Controller.toggle('full_start');
-                        }, 100);
-                    }
-                }, 300);
+                        if (allButtons.length === 0) return;
+
+                        var categories = {
+                            online: [],
+                            torrent: [],
+                            trailer: [],
+                            other: []
+                        };
+
+                        var addedButtonTexts = {};
+
+                        $(allButtons).each(function() {
+                            var button = this;
+                            var buttonText = $(button).text().trim();
+                            var className = button.className || '';
+
+                            if (!buttonText || addedButtonTexts[buttonText]) return;
+                            addedButtonTexts[buttonText] = true;
+
+                            if (className.includes('online')) {
+                                categories.online.push(button);
+                            } else if (className.includes('torrent')) {
+                                categories.torrent.push(button);
+                            } else if (className.includes('trailer')) {
+                                categories.trailer.push(button);
+                            } else {
+                                categories.other.push(button);
+                            }
+                        });
+
+                        var buttonSortOrder = ['online', 'torrent', 'trailer', 'other'];
+
+                        var needToggle = Lampa.Controller.enabled().name === 'full_start';
+                        if (needToggle) Lampa.Controller.toggle('settings_component');
+
+                        buttonSortOrder.forEach(function(category) {
+                            categories[category].forEach(function(button) {
+                                targetContainer.append(button);
+                            });
+                        });
+
+                        if (needToggle) {
+                            setTimeout(function() {
+                                Lampa.Controller.toggle('full_start');
+                            }, 100);
+                        }
+                    }, 300);
+                }
             }
         });
 
@@ -305,10 +429,13 @@
             }
         });
 
-        buttonObserver.observe(document.body, { childList: true, subtree: true });
+        buttonObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
     }
 
-    // 4. Расширенные лейблы на карточках
+    // 3. Расширенные лейблы на карточках
     function changeMovieTypeLabels() {
         if (!$('#rich_card_labels').length) {
             $('<style id="rich_card_labels"></style>').html(`
@@ -447,7 +574,7 @@
         setInterval(scanAllCards, 3500);
     }
 
-    // 5. Применение тем
+    // 4. Применение тем
     function applyTheme(theme) {
         $('#interface_mod_theme').remove();
         if (theme === 'default') return;
@@ -556,7 +683,7 @@
         $('head').append(style);
     }
 
-    // 6. Цветные рейтинги
+    // 7. Цветные рейтинги
     function updateVoteColors() {
         if (!InterFaceMod.settings.colored_ratings) return;
 
@@ -582,7 +709,10 @@
         if (!InterFaceMod.settings.colored_ratings) return;
         setTimeout(updateVoteColors, 500);
 
-        const observer = new MutationObserver(() => setTimeout(updateVoteColors, 100));
+        const observer = new MutationObserver(function(mutations) {
+            setTimeout(updateVoteColors, 100);
+        });
+
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
@@ -596,7 +726,7 @@
         });
     }
 
-    // 7. Цветные статусы сериалов
+    // 8. Цветные статусы сериалов
     function colorizeSeriesStatus() {
         if (!InterFaceMod.settings.colored_elements) return;
 
@@ -676,7 +806,7 @@
         });
     }
 
-    // 8. Цветные возрастные ограничения
+    // 9. Цветные возрастные ограничения
     function colorizeAgeRating() {
         if (!InterFaceMod.settings.colored_elements) return;
 
@@ -747,128 +877,29 @@
         });
     }
 
-    // 9. О плагине (showAbout) — ваша оригинальная функция
+    // 10. О плагине
     function showAbout() {
         if ($('#about-plugin-styles').length) $('#about-plugin-styles').remove();
 
         var style = $('<style id="about-plugin-styles"></style>');
         style.html(`
-            .about-plugin {
-                background: rgba(9, 2, 39, 0.95);
-                border-radius: 15px;
-                overflow: hidden;
-                padding: 10px;
-                box-shadow: 0 0 15px rgba(0, 219, 222, 0.1);
-            }
-            .about-plugin__title {
-                background: linear-gradient(90deg, #fc00ff, #00dbde);
-                padding: 15px;
-                border-radius: 10px;
-                text-align: center;
-                margin-bottom: 20px;
-            }
-            .about-plugin__title h1 {
-                margin: 0;
-                color: white;
-                font-size: 24px;
-                font-weight: bold;
-                text-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
-            }
-            .about-plugin__description {
-                padding: 15px;
-                background: rgba(15, 2, 33, 0.8);
-                border-radius: 10px;
-                margin-bottom: 20px;
-                border: 1px solid rgba(252, 0, 255, 0.2);
-            }
-            .about-plugin__description ul {
-                color: #fff;
-                font-size: 14px;
-                line-height: 1.5;
-                list-style-type: none;
-                padding-left: 10px;
-                margin: 10px 0;
-            }
-            .about-plugin__description li {
-                margin-bottom: 6px;
-                padding-left: 20px;
-                position: relative;
-            }
-            .about-plugin__description li span {
-                position: absolute;
-                left: 0;
-                color: #fc00ff;
-            }
-            .about-plugin__footer {
-                padding: 15px;
-                background: linear-gradient(90deg, #fc00ff, #00dbde);
-                border-radius: 10px;
-                text-align: center;
-            }
-            .about-plugin__footer h3 {
-                margin-top: 0;
-                color: white;
-                font-size: 18px;
-                font-weight: bold;
-            }
-            .credits-container {
-                display: flex;
-                justify-content: space-between;
-                margin-top: 20px;
-            }
-            .credits-column {
-                width: 48%;
-                background: rgba(15, 2, 33, 0.8);
-                border-radius: 10px;
-                padding: 10px;
-                position: relative;
-                height: 200px;
-                overflow: hidden;
-                border: 1px solid rgba(252, 0, 255, 0.2);
-            }
-            .credits-title {
-                color: #fc00ff;
-                font-size: 16px;
-                font-weight: bold;
-                text-align: center;
-                margin-bottom: 10px;
-                text-shadow: 0 0 5px rgba(252, 0, 255, 0.3);
-                position: relative;
-                z-index: 10;
-                background: rgba(15, 2, 33, 0.95);
-                padding: 8px 0;
-                border-radius: 5px;
-                box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-                border-bottom: 1px solid rgba(252, 0, 255, 0.3);
-            }
-            .credits-list {
-                position: absolute;
-                width: 100%;
-                left: 0;
-                padding: 0 10px;
-                box-sizing: border-box;
-                animation: scrollCredits 30s linear infinite;
-                padding-top: 60px;
-                margin-top: 20px;
-            }
-            .credits-item {
-                text-align: center;
-                margin-bottom: 15px;
-                color: white;
-            }
-            .credits-name {
-                font-weight: bold;
-                font-size: 14px;
-                margin-bottom: 4px;
-            }
-            .credits-contribution {
-                font-size: 12px;
-                opacity: 0.8;
-            }
-            @keyframes scrollCredits {
-                0% { transform: translateY(50%); }
-                100% { transform: translateY(-100%); }
-            }
+            .about-plugin { background: rgba(9, 2, 39, 0.95); border-radius: 15px; overflow: hidden; padding: 10px; box-shadow: 0 0 15px rgba(0, 219, 222, 0.1); }
+            .about-plugin__title { background: linear-gradient(90deg, #fc00ff, #00dbde); padding: 15px; border-radius: 10px; text-align: center; margin-bottom: 20px; }
+            .about-plugin__title h1 { margin: 0; color: white; font-size: 24px; font-weight: bold; text-shadow: 0 0 5px rgba(255, 255, 255, 0.5); }
+            .about-plugin__description { padding: 15px; background: rgba(15, 2, 33, 0.8); border-radius: 10px; margin-bottom: 20px; border: 1px solid rgba(252, 0, 255, 0.2); }
+            .about-plugin__description ul { color: #fff; font-size: 14px; line-height: 1.5; list-style-type: none; padding-left: 10px; margin: 10px 0; }
+            .about-plugin__description li { margin-bottom: 6px; padding-left: 20px; position: relative; }
+            .about-plugin__description li span { position: absolute; left: 0; color: #fc00ff; }
+            .about-plugin__footer { padding: 15px; background: linear-gradient(90deg, #fc00ff, #00dbde); border-radius: 10px; text-align: center; }
+            .about-plugin__footer h3 { margin-top: 0; color: white; font-size: 18px; font-weight: bold; }
+            .credits-container { display: flex; justify-content: space-between; margin-top: 20px; }
+            .credits-column { width: 48%; background: rgba(15, 2, 33, 0.8); border-radius: 10px; padding: 10px; position: relative; height: 200px; overflow: hidden; border: 1px solid rgba(252, 0, 255, 0.2); }
+            .credits-title { color: #fc00ff; font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 10px; text-shadow: 0 0 5px rgba(252, 0, 255, 0.3); position: relative; z-index: 10; background: rgba(15, 2, 33, 0.95); padding: 8px 0; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.3); border-bottom: 1px solid rgba(252, 0, 255, 0.3); }
+            .credits-list { position: absolute; width: 100%; left: 0; padding: 0 10px; box-sizing: border-box; animation: scrollCredits 30s linear infinite; padding-top: 60px; margin-top: 20px; }
+            .credits-item { text-align: center; margin-bottom: 15px; color: white; }
+            .credits-name { font-weight: bold; font-size: 14px; margin-bottom: 4px; }
+            .credits-contribution { font-size: 12px; opacity: 0.8; }
+            @keyframes scrollCredits { 0% { transform: translateY(50%); } 100% { transform: translateY(-100%); } }
         `);
         $('head').append(style);
 
@@ -878,9 +909,7 @@
                     <h1>Интерфейс MOD v${InterFaceMod.version}</h1>
                 </div>
                 <div class="about-plugin__description">
-                    <div style="color:#fff;font-size:15px;margin-bottom:10px;">
-                        New versions 2.2.1
-                    </div>
+                    <div style="color:#fff;font-size:15px;margin-bottom:10px;">New versions 2.2.1</div>
                     <ul>
                         <li><span>✦</span> Восстановлена работа с кнопками</li>
                         <li><span>✦</span> Новая функция цветные статусы и возрастные ограничения</li>
@@ -909,7 +938,7 @@
         });
     }
 
-    // 10. Инициализация плагина
+    // 11. Запуск плагина
     function startPlugin() {
         Lampa.SettingsApi.addComponent({
             component: 'season_info',
@@ -1081,14 +1110,16 @@
         startPlugin();
     } else {
         Lampa.Listener.follow('app', function (event) {
-            if (event.type === 'ready') startPlugin();
+            if (event.type === 'ready') {
+                startPlugin();
+            }
         });
     }
 
     Lampa.Manifest.plugins = {
         name: 'Интерфейс мод',
         version: InterFaceMod.version,
-        description: 'Улучшенный интерфейс для Lampa с расширенными лейблами на карточках'
+        description: 'Улучшенный интерфейс для приложения Lampa'
     };
 
     window.season_info = InterFaceMod;
