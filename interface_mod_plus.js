@@ -4,7 +4,7 @@
     // Основной объект плагина
     var InterFaceMod = {
         name: 'interface_mod',
-        version: '2.2.1',
+        version: '2.2.2',
         debug: false,
         settings: {
             enabled: true,
@@ -190,7 +190,6 @@
         `;
         document.head.appendChild(buttonStyle);
         
-        // Безопасное переопределение через Listener вместо подмены Lampa.FullCard.build
         Lampa.Listener.follow('full', function(e) {
             if (e.type === 'complite' && e.object && e.object.activity) {
                 if (InterFaceMod.settings.show_buttons) {
@@ -247,7 +246,6 @@
                         var needToggle = Lampa.Controller.enabled().name === 'full_start';
                         if (needToggle) Lampa.Controller.toggle('settings_component');
                         
-                        // Переносим кнопки в нужном порядке
                         buttonSortOrder.forEach(function(category) {
                             categories[category].forEach(function(button) {
                                 targetContainer.append(button);
@@ -273,46 +271,7 @@
                 display: none !important;
             }
 
-            /* Контейнер для всей информации поверх постера */
-            .card-info-overlay {
-                position: absolute;
-                bottom: 0;
-                left: 0;
-                right: 0;
-                background: linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.6) 60%, transparent 100%);
-                padding: 2.5em 0.6em 0.6em 0.6em;
-                display: flex;
-                flex-direction: column;
-                justify-content: flex-end;
-                z-index: 10;
-                pointer-events: none;
-                min-height: 45%;
-            }
-
-            /* Блок с годом и качеством */
-            .card-meta-row {
-                display: flex;
-                align-items: center;
-                gap: 0.4em;
-                margin-bottom: 0.3em;
-                font-size: 0.75em;
-            }
-
-            .meta-badge {
-                background-color: rgba(255, 255, 255, 0.2);
-                color: #fff;
-                padding: 0.2em 0.5em;
-                border-radius: 0.2em;
-                text-shadow: 0 1px 1px rgba(0,0,0,0.5);
-            }
-
-            .meta-badge--quality {
-                background-color: #2196f3;
-                font-weight: bold;
-                text-transform: uppercase;
-            }
-
-            /* Лейбл СЕРИАЛ / ФИЛЬМ */
+            /* --- Лейбл Типа (Сериал/Фильм) --- */
             .content-label {
                 position: absolute;
                 top: 0.5em !important;
@@ -325,20 +284,51 @@
                 font-weight: bold;
                 z-index: 11 !important;
                 box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+                pointer-events: none;
             }
             
             .serial-label { background-color: #3498db !important; }
             .movie-label { background-color: #2ecc71 !important; }
 
-            /* Информация о сериале */
-            .series-status-info {
-                font-size: 0.75em;
+            /* --- Информационные бейджи (Год/Сезоны) вверху --- */
+            .card-meta-badges {
+                position: absolute;
+                top: 0.5em;
+                left: 0.5em;
+                display: flex;
+                flex-direction: column;
+                gap: 0.3em;
+                z-index: 11;
+                pointer-events: none;
+            }
+
+            .card-meta-badge {
+                background-color: rgba(0, 0, 0, 0.6);
+                backdrop-filter: blur(4px);
+                -webkit-backdrop-filter: blur(4px);
                 color: #fff;
+                padding: 0.2em 0.5em;
+                border-radius: 0.2em;
+                font-size: 0.75em;
+                text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+                line-height: 1.2;
+            }
+
+            /* --- Статус сериала (над названием) --- */
+            .card-series-status {
+                position: absolute;
+                bottom: 2.2em; /* Поднимаем выше рейтинга и названия */
+                left: 0;
+                right: 0;
+                padding: 0.3em 0.6em;
+                background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+                font-size: 0.7em;
+                color: #fff;
+                z-index: 10;
                 text-shadow: 0 1px 2px rgba(0,0,0,0.8);
-                line-height: 1.3;
+                pointer-events: none;
             }
             
-            .series-status-info span { display: block; }
             .status-highlight {
                 color: #ffeb3b;
                 font-weight: bold;
@@ -365,7 +355,7 @@
             if (!InterFaceMod.settings.show_movie_type) return;
             
             // Избегаем повторной обработки
-            if ($(card).find('.card-info-overlay').length) return;
+            if ($(card).find('.content-label').length) return;
             
             var view = $(card).find('.card__view');
             if (!view.length) return;
@@ -384,59 +374,54 @@
                 is_tv = true;
             }
             
-            var overlay = $('<div class="card-info-overlay"></div>');
-            var metaRow = $('<div class="card-meta-row"></div>');
+            // 1. Добавляем лейбл типа (Фильм/Сериал)
+            var typeLabel = $('<div class="content-label"></div>');
+            if (is_tv) typeLabel.addClass('serial-label').text('Сериал');
+            else typeLabel.addClass('movie-label').text('Фильм');
+            view.append(typeLabel);
+
+            // 2. Контейнер для бейджей (Год, Сезоны)
+            var badgesContainer = $('<div class="card-meta-badges"></div>');
             
             // Год
             var year = metaData.year || 
                        (metaData.release_date ? metaData.release_date.substring(0, 4) : null) ||
                        (metaData.first_air_date ? metaData.first_air_date.substring(0, 4) : null);
-            if (year) metaRow.append($('<div class="meta-badge"></div>').text(year));
-
-            // Качество (скрыто, т.к. данные редко доступны в списке)
-            // if (metaData.quality) { ... }
-
-            var seriesInfoHtml = '';
             
+            if (year) {
+                badgesContainer.append($('<div class="card-meta-badge"></div>').text(year));
+            }
+
+            // Сезоны (если есть данные)
             if (is_tv && metaData.number_of_seasons) {
-                var seasons = metaData.number_of_seasons;
-                var episodes = metaData.number_of_episodes;
+                var sText = plural(metaData.number_of_seasons, 'сезон', 'сезона', 'сезонов');
+                badgesContainer.append($('<div class="card-meta-badge"></div>').text(metaData.number_of_seasons + ' ' + sText));
+            }
+
+            view.append(badgesContainer);
+
+            // 3. Статус сериала (над названием, снизу)
+            if (is_tv) {
+                var statusHtml = '';
                 var status = metaData.status;
-                
-                var lines = [];
-                
+
+                // Обработка статусов
                 if (status === 'Ended' || status === 'Canceled') {
-                    lines.push('<span style="opacity: 0.8;">Сериал завершен</span>');
+                    statusHtml = '<span>Сериал завершен</span>';
                 } else if (status === 'Returning Series' || status === 'In Production') {
                     if (metaData.next_episode_to_air && metaData.next_episode_to_air.air_date) {
                         var nextDate = formatDateLeft(metaData.next_episode_to_air.air_date);
                         if (nextDate) {
-                            lines.push('<span class="status-highlight">Новая серия ' + nextDate + '</span>');
+                            statusHtml = '<span class="status-highlight">Новая серия ' + nextDate + '</span>';
                         }
                     }
                 }
 
-                var sText = plural(seasons, 'сезон', 'сезона', 'сезонов');
-                var epText = '';
-                if (episodes) {
-                    epText = ', ' + episodes + ' ' + plural(episodes, 'серия', 'серии', 'серий');
+                if (statusHtml) {
+                    var statusDiv = $('<div class="card-series-status"></div>').html(statusHtml);
+                    view.append(statusDiv);
                 }
-                lines.push('<span>' + seasons + ' ' + sText + epText + '</span>');
-
-                seriesInfoHtml = '<div class="series-status-info">' + lines.join('') + '</div>';
-            } else if (!is_tv && year) {
-                // Для фильмов можно добавить продолжительность, если есть, но оставим чистым
             }
-
-            overlay.append(metaRow);
-            if (seriesInfoHtml) overlay.append(seriesInfoHtml);
-            
-            view.append(overlay);
-            
-            var typeLabel = $('<div class="content-label"></div>');
-            if (is_tv) typeLabel.addClass('serial-label').text('Сериал');
-            else typeLabel.addClass('movie-label').text('Фильм');
-            view.append(typeLabel);
         }
         
         // Наблюдатель за изменениями (без setInterval)
@@ -466,7 +451,7 @@
                     $('.card').each(function() { addLabelToCard(this); });
                 } else {
                     $('body').attr('data-movie-labels', 'off');
-                    $('.card-info-overlay, .content-label').remove();
+                    $('.content-label, .card-meta-badges, .card-series-status').remove();
                 }
             }
         });
@@ -620,9 +605,8 @@
         observer.observe(document.body, { childList: true, subtree: true });
     }
 
-    // Функция показа окна "О плагине" (Расшифрованная версия)
+    // Функция показа окна "О плагине"
     function showAbout() {
-        // Стили для модального окна
         $('#about-plugin-styles').remove();
         var style = $('<style id="about-plugin-styles"></style>');
         style.html(`
@@ -642,7 +626,6 @@
         `);
         $('head').append(style);
 
-        // Контент окна
         var html = `
         <div class="about-plugin">
             <div class="about-plugin__title">
@@ -665,13 +648,12 @@
                 </div>
             </div>
             <div class="about-plugin__description" style="margin-top: 20px;">
-                <div style="color: #fff; font-size: 15px; margin-bottom: 10px;">Версия 2.2.1</div>
+                <div style="color: #fff; font-size: 15px; margin-bottom: 10px;">Версия 2.2.2</div>
                 <ul>
-                    <li><span>✦</span> Восстановлена работа с кнопками</li>
-                    <li><span>✦</span> Функция цветных статусов и возрастных ограничений</li>
-                    <li><span>✦</span> Оптимизирована работа интерфейса (удален setInterval)</li>
-                    <li><span>✦</span> Добавлены информативные карточки (год, статус, серии)</li>
-                    <li><span>✦</span> Улучшена безопасность (удалена обфускация)</li>
+                    <li><span>✦</span> Исправлено перекрытие рейтинга и названия</li>
+                    <li><span>✦</span> Год и сезоны вынесены в левый верхний угол</li>
+                    <li><span>✦</span> Статус сериала отображается над названием</li>
+                    <li><span>✦</span> Оптимизация производительности</li>
                 </ul>
             </div>
         </div>`;
@@ -689,7 +671,6 @@
             size: 'medium'
         });
 
-        // Загрузка списка спонсоров
         var url = 'https://bywolf88.github.io/lampa-plugins/usersupp.json?nocache=' + Math.random();
         fetch(url).then(r => r.json()).then(data => {
             if(data && data.supporters) {
@@ -795,6 +776,6 @@
     if (window.appready) startPlugin();
     else Lampa.Listener.follow('app', function (e) { if (e.type === 'ready') startPlugin(); });
 
-    Lampa.Manifest.plugins = { name: 'Интерфейс мод', version: '2.2.1', description: 'Улучшенный интерфейс для Lampa' };
+    Lampa.Manifest.plugins = { name: 'Интерфейс мод', version: '2.2.2', description: 'Улучшенный интерфейс для Lampa' };
     window.season_info = InterFaceMod;
 })(); 
